@@ -224,7 +224,7 @@ function MarketSidebar({ tickers, contracts, selected, onSelect, busy }: { ticke
                       </span>
                       <small>{contract.name}</small>
                     </span>
-                    <span className="watch-quote"><b>{ticker ? `$${formatPrice(ticker.price)}` : '—'}</b><small className={positive ? 'tone-positive' : 'tone-negative'}>{ticker ? formatChange(ticker.change24h) : '—'}</small></span>
+                    <span className="watch-quote"><b>{ticker ? `${formatPrice(ticker.price)}` : '—'}</b><small className={positive ? 'tone-positive' : 'tone-negative'}>{ticker ? formatChange(ticker.change24h) : '—'}</small></span>
                   </button>
                 )
               })}
@@ -235,55 +235,6 @@ function MarketSidebar({ tickers, contracts, selected, onSelect, busy }: { ticke
           <div className="watch-footer"><span className="live-dot" /> {query ? `نتائج البحث: ${rows.length}` : 'الأسعار تُحدّث كل 10 ثوانٍ'}</div>
         </>
       )}
-    </aside>
-  )
-}: { tickers?: Ticker[]; contracts?: FuturesSymbol[]; selected: SymbolKey; onSelect: (symbol: SymbolKey) => void; busy: boolean }) {
-  const [query, setQuery] = useState('')
-  const tickerBySymbol = new Map((tickers ?? []).map((ticker) => [ticker.symbol, ticker]))
-  const normalizedQuery = query.trim().toLowerCase()
-  const rows = (contracts ?? [])
-    .filter((contract) => !normalizedQuery || `${contract.symbol} ${contract.baseCoin} ${contract.name}`.toLowerCase().includes(normalizedQuery))
-    .sort((left, right) => {
-      if (normalizedQuery) return left.symbol.localeCompare(right.symbol)
-      return (tickerBySymbol.get(right.symbol)?.volume24h ?? 0) - (tickerBySymbol.get(left.symbol)?.volume24h ?? 0)
-    })
-    .slice(0, normalizedQuery ? 24 : 12)
-
-  return (
-    <aside className="panel watch-panel">
-      <div className="panel-heading">
-        <div>
-          <p className="eyebrow">بحث ومتابعة</p>
-          <h2>عقود USDT الدائمة</h2>
-        </div>
-        <span className="market-count">{contracts?.length.toLocaleString('en-US') ?? '—'} عقد</span>
-      </div>
-      <label className="symbol-search">
-        <Search aria-hidden="true" />
-        <input aria-label="ابحث باسم العملة أو رمز العقد" placeholder="ابحث بالاسم أو الرمز…" value={query} onChange={(event) => setQuery(event.target.value)} />
-        {query && <button type="button" aria-label="مسح البحث" onClick={() => setQuery('')}>×</button>}
-      </label>
-      {!contracts && busy ? (
-        <div className="watch-loading"><span className="spinner" /> تحميل عقود الفيوتشر</div>
-      ) : rows.length ? (
-        <div className="watch-list">
-          {rows.map((contract) => {
-            const ticker = tickerBySymbol.get(contract.symbol)
-            const active = contract.symbol === selected
-            const positive = (ticker?.change24h ?? 0) >= 0
-            return (
-              <button key={contract.symbol} type="button" className={`watch-row ${active ? 'watch-row-active' : ''}`} onClick={() => onSelect(contract.symbol)} aria-pressed={active}>
-                <span className={`coin-mark coin-${contract.baseCoin.toLowerCase()}`}>{contract.baseCoin.slice(0, 1)}</span>
-                <span className="watch-name"><b>{contract.baseCoin}<small>/ USDT PERP</small></b><small>{contract.name}</small></span>
-                <span className="watch-quote"><b>{ticker ? `$${formatPrice(ticker.price)}` : '—'}</b><small className={positive ? 'tone-positive' : 'tone-negative'}>{ticker ? formatChange(ticker.change24h) : '—'}</small></span>
-              </button>
-            )
-          })}
-        </div>
-      ) : (
-        <div className="watch-loading">{normalizedQuery ? 'لا توجد عقود تطابق البحث.' : 'تعذّر تحميل عقود USDT الدائمة.'}</div>
-      )}
-      <div className="watch-footer"><span className="live-dot" /> {query ? `نتائج البحث: ${rows.length}` : 'الأسعار تُحدّث كل ثانية'}</div>
     </aside>
   )
 }
