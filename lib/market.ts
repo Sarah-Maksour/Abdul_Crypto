@@ -45,6 +45,7 @@ export type MarketSnapshot = {
     ema50: number
     vwap: number
     atr: number
+    adx: number
     volumeRatio: number
     bias: number
     patterns: string[]
@@ -148,6 +149,43 @@ function findPatterns(candles: Candle[]) {
   return { patterns, direction: Math.sign(direction) }
 }
 
+function calculateADX(candles: Candle[], period = 14) {
+  if (candles.length < period + 2) return 0
+  const slice = candles.slice(-(period * 3 + 1))
+  const trueRanges: number[] = []
+  const plusDM: number[] = []
+  const minusDM: number[] = []
+  for (let index = 1; index < slice.length; index += 1) {
+    const current = slice[index]
+    const previous = slice[index - 1]
+    const highDiff = current.high - previous.high
+    const lowDiff = previous.low - current.low
+    const tr = Math.max(current.high - current.low, Math.abs(current.high - previous.close), Math.abs(current.low - previous.close))
+    trueRanges.push(tr)
+    plusDM.push(highDiff > lowDiff && highDiff > 0 ? highDiff : 0)
+    minusDM.push(lowDiff > highDiff && lowDiff > 0 ? lowDiff : 0)
+  }
+  let atrValue = trueRanges.slice(0, period).reduce((sum, value) => sum + value, 0) / period
+  let plusDMValue = plusDM.slice(0, period).reduce((sum, value) => sum + value, 0) / period
+  let minusDMValue = minusDM.slice(0, period).reduce((sum, value) => sum + value, 0) / period
+  const dxValues: number[] = []
+  for (let index = period; index < trueRanges.length; index += 1) {
+    atrValue = (atrValue * (period - 1) + trueRanges[index]) / period
+    plusDMValue = (plusDMValue * (period - 1) + plusDM[index]) / period
+    minusDMValue = (minusDMValue * (period - 1) + minusDM[index]) / period
+    const plusDI = atrValue > 0 ? (plusDMValue / atrValue) * 100 : 0
+    const minusDI = atrValue > 0 ? (minusDMValue / atrValue) * 100 : 0
+    const sum = plusDI + minusDI
+    dxValues.push(sum > 0 ? (Math.abs(plusDI - minusDI) / sum) * 100 : 0)
+  }
+  if (dxValues.length < period) return dxValues.length ? dxValues.reduce((sum, value) => sum + value, 0) / dxValues.length : 0
+  let adxValue = dxValues.slice(0, period).reduce((sum, value) => sum + value, 0) / period
+  for (let index = period; index < dxValues.length; index += 1) {
+    adxValue = (adxValue * (period - 1) + dxValues[index]) / period
+  }
+  return adxValue
+}
+
 function calculateIndicators(candles: Candle[]) {
   const closes = candles.map((candle) => candle.close)
   const last = candles.at(-1)!
@@ -171,6 +209,7 @@ function calculateIndicators(candles: Candle[]) {
     const previousClose = candles[candles.length - recent.length + index - 1]?.close ?? candle.close
     return Math.max(candle.high - candle.low, Math.abs(candle.high - previousClose), Math.abs(candle.low - previousClose))
   }))
+  const adx = calculateADX(candles)
   const volumeBase = average(candles.slice(-21, -1).map((candle) => candle.volume))
   const volumeRatio = volumeBase > 0 ? last.volume / volumeBase : 1
   const ema21 = ema(closes.slice(-80), 21)
@@ -185,7 +224,7 @@ function calculateIndicators(candles: Candle[]) {
     volumeRatio >= 1.2 ? Math.sign(signalCandle.close - signalCandle.open) : 0,
   ].reduce((sum, item) => sum + item, 0)
 
-  return { rsi, ema21, ema50, vwap, atr, volumeRatio, bias, patterns: candlePattern.patterns, patternDirection: candlePattern.direction }
+  return { rsi, ema21, ema50, vwap, atr, adx, volumeRatio, bias, patterns: candlePattern.patterns, patternDirection: candlePattern.direction }
 }
 
 async function getBitgetData<T>(url: string, revalidate = 1): Promise<T> {

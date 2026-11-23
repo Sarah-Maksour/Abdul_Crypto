@@ -239,6 +239,44 @@ function MarketSidebar({ tickers, contracts, selected, onSelect, busy }: { ticke
   )
 }
 
+function IndicatorStrip({ indicators, price }: { indicators?: MarketSnapshot['indicators']; price?: number }) {
+  if (!indicators) return null
+  const last = price ?? 0
+  const vwapSignal = last > indicators.vwap ? 'صاعد' : last < indicators.vwap ? 'هابط' : 'متوازن'
+  const vwapTone = last > indicators.vwap ? 'ind-up' : last < indicators.vwap ? 'ind-down' : 'ind-flat'
+  const rsiSignal = indicators.rsi > 60 ? 'قوي صاعد' : indicators.rsi < 40 ? 'ضعيف هابط' : 'متوازن'
+  const rsiTone = indicators.rsi > 60 ? 'ind-up' : indicators.rsi < 40 ? 'ind-down' : 'ind-flat'
+  const emaSignal = last > indicators.ema21 && indicators.ema21 > indicators.ema50 ? 'صاعد' : last < indicators.ema21 && indicators.ema21 < indicators.ema50 ? 'هابط' : 'متقاطع'
+  const emaTone = last > indicators.ema21 && indicators.ema21 > indicators.ema50 ? 'ind-up' : last < indicators.ema21 && indicators.ema21 < indicators.ema50 ? 'ind-down' : 'ind-flat'
+  const adxSignal = indicators.adx >= 25 ? 'اتجاه قوي' : indicators.adx >= 20 ? 'اتجاه ضعيف' : 'جانبي'
+  const adxTone = indicators.adx >= 25 ? 'ind-strong' : indicators.adx >= 20 ? 'ind-weak' : 'ind-flat'
+  const volSignal = indicators.volumeRatio >= 1.2 ? 'زخم عالي' : indicators.volumeRatio >= 0.8 ? 'زخم طبيعي' : 'زخم منخفض'
+  const volTone = indicators.volumeRatio >= 1.2 ? 'ind-strong' : indicators.volumeRatio >= 0.8 ? 'ind-flat' : 'ind-weak'
+  const signals = [
+    { label: 'Volume', value: indicators.volumeRatio.toFixed(2) + '×', signal: volSignal, tone: volTone },
+    { label: 'VWAP', value: formatPrice(indicators.vwap), signal: vwapSignal, tone: vwapTone },
+    { label: 'RSI', value: indicators.rsi.toFixed(1), signal: rsiSignal, tone: rsiTone },
+    { label: 'EMA 20/50', value: formatPrice(indicators.ema21), signal: emaSignal, tone: emaTone },
+    { label: 'ADX', value: indicators.adx.toFixed(1), signal: adxSignal, tone: adxTone },
+  ]
+  const aligned = signals.filter((item) => item.tone === 'ind-up' || item.tone === 'ind-strong').length
+  return (
+    <div className="indicator-strip" aria-label="المؤشرات الفنية">
+      {signals.map((item) => (
+        <div key={item.label} className={`indicator-chip ${item.tone}`}>
+          <small>{item.label}</small>
+          <b>{item.value}</b>
+          <span className="indicator-signal">{item.signal}</span>
+        </div>
+      ))}
+      <div className="indicator-consensus">
+        <small>التوافق</small>
+        <b>{aligned}/5</b>
+      </div>
+    </div>
+  )
+}
+
 function ForecastPanel({
   forecast,
   loading,
@@ -503,6 +541,8 @@ export default function TradeDashboard() {
               <div className="pattern-copy"><small>النمط على آخر شمعة مغلقة</small><b>{indicators?.patterns.join(' · ') ?? 'جارٍ قراءة الشموع'}</b></div>
               <span className={`bias-chip ${bullish ? 'bias-up' : bearish ? 'bias-down' : 'bias-neutral'}`}>{bullish ? <TrendingUp /> : bearish ? <TrendingDown /> : <Activity />}{bullish ? 'ميل صاعد' : bearish ? 'ميل هابط' : 'متوازن'} · {biasScore}</span>
             </div>
+
+            <IndicatorStrip indicators={indicators} price={displayedPrice} />
           </section>
 
           <ForecastPanel forecast={currentForecast} loading={marketLoading} error={forecastFor === activeForecastKey ? forecastError : undefined} onGenerate={generateForecast} generating={isMutating} currentPrice={displayedPrice} />
