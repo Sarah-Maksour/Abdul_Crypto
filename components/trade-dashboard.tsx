@@ -16,6 +16,7 @@ import {
   Clock3,
   RefreshCw,
   Search,
+  Send,
   ShieldCheck,
   Sparkles,
   TrendingDown,
@@ -164,6 +165,33 @@ type CompletedOpportunity = {
   direction: 'up' | 'down'
   biasScore: number
   consensusScore: number
+}
+
+const TELEGRAM_BOT_TOKEN_FALLBACK = '9055457414:AAEw-cvr2yomOvBFhsIuMSqQgqN8TmDUFUY'
+const TELEGRAM_CHAT_ID_FALLBACK = '6281055314'
+
+async function sendTelegramAlert(opp: CompletedOpportunity, price: number): Promise<void> {
+  const directionLabel = opp.direction === 'up' ? 'Bullish 🟢' : 'Bearish 🔴'
+  const timestamp = new Date().toISOString()
+  const text = [
+    '🔔 <b>Dual 5/5 Completed Opportunity</b>',
+    '',
+    `Coin: <b>${opp.symbol}</b>`,
+    `Direction: ${directionLabel}`,
+    `Price: ${formatPrice(price)}`,
+    `Bias/Trend: ${opp.biasScore}/5`,
+    `Confluence: ${opp.consensusScore}/5`,
+    `Time: ${timestamp}`,
+  ].join('\n')
+  try {
+    await fetch('/api/telegram', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
+  } catch {
+    // Network failure; the in-app alert still fires.
+  }
 }
 
 function playAlertSound() {
@@ -526,8 +554,11 @@ export default function TradeDashboard() {
     setCompletedOpps(nextOpps)
     if (newlyCompleted.length > 0) {
       const latest = newlyCompleted[newlyCompleted.length - 1]
+      const tickerForOpp = tickers?.find((item) => item.symbol === latest.symbol)
+      const oppPrice = tickerForOpp?.price ?? 0
       setAlertBanner(latest)
       playAlertSound()
+      void sendTelegramAlert(latest, oppPrice)
       if (typeof window !== 'undefined' && 'Notification' in window) {
         if (Notification.permission === 'granted') {
           new Notification('فرصة مكتملة 5/5', {
@@ -545,7 +576,7 @@ export default function TradeDashboard() {
       }
       setTimeout(() => setAlertBanner((current) => current === latest ? null : current), 8000)
     }
-  }, [scannerSignals, contracts])
+  }, [scannerSignals, contracts, tickers])
 
   useEffect(() => {
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
@@ -575,6 +606,49 @@ export default function TradeDashboard() {
     await Promise.all([refreshMarket(), refreshTickers()])
   }
 
+  const [telegramTesting, setTelegramTesting] = useState(false)
+  const [telegramStatus, setTelegramStatus] = useState<string | null>(null)
+
+  async function testTelegram() {
+    setTelegramTesting(true)
+    setTelegramStatus(null)
+    const testOpp: CompletedOpportunity = {
+      symbol: 'TESTUSDT',
+      baseCoin: 'TEST',
+      direction: 'up',
+      biasScore: 5,
+      consensusScore: 5,
+    }
+    void sendTelegramAlert(testOpp, 0)
+    try {
+      const response = await fetch('/api/telegram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: [
+            '🧪 <b>Telegram Test Alert</b>',
+            '',
+            'Bot: @Abdul_Trade_bot',
+            `Status: ${telegramTesting ? 'Testing…' : 'Sent'}`,
+            `Time: ${new Date().toISOString()}`,
+            '',
+            'If you received this, Telegram alerts are working.',
+          ].join('\n'),
+        }),
+      })
+      const payload = await response.json()
+      if (response.ok && payload.ok) {
+        setTelegramStatus('تم الإرسال بنجاح')
+      } else {
+        setTelegramStatus(payload.error || 'فشل الإرسال')
+      }
+    } catch {
+      setTelegramStatus('تعذّر الوصول إلى الخادم')
+    }
+    setTelegramTesting(false)
+    setTimeout(() => setTelegramStatus(null), 5000)
+  }
+
   function selectSymbol(nextSymbol: SymbolKey) {
     setForecastFor('')
     setSymbol(nextSymbol)
@@ -593,6 +667,11 @@ export default function TradeDashboard() {
         </nav>
         <div className="top-actions">
           <span className="market-status"><span className="live-dot" /> سوق مباشر</span>
+          <button type="button" className={`telegram-test-button ${telegramStatus ? (telegramStatus.includes('نجاح') ? 'telegram-ok' : 'telegram-fail') : ''}`} onClick={testTelegram} disabled={telegramTesting} aria-label="اختبار تيليجرام" title="اختبار إشعار تيليجرام">
+            {telegramTesting ? <span className="spinner" /> : <Send />}
+            <span>{telegramTesting ? 'جارٍ' : 'تيليجرام'}</span>
+          </button>
+          {telegramStatus && <span className="telegram-status">{telegramStatus}</span>}
           <button type="button" className="icon-button" onClick={refreshEverything} aria-label="تحديث بيانات السوق" title="تحديث"><RefreshCw /></button>
           <button type="button" className="profile-button" aria-label="الحساب">ع</button>
         </div>
