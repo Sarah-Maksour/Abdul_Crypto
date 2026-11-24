@@ -16,6 +16,8 @@ type ScanSignal = {
   candleTime: number
   confirmed: boolean
   available: boolean
+  biasScore: number
+  consensusScore: number
 }
 
 export async function GET(request: Request) {
@@ -41,6 +43,15 @@ export async function GET(request: Request) {
   const results = await Promise.allSettled(symbols.map(async (symbol, index): Promise<ScanSignal> => {
     const market = await getMarketSnapshot(symbol, '1m')
     const { indicators } = market
+    const last = market.price
+    const consensusScore = [
+      last > indicators.vwap ? 1 : 0,
+      indicators.rsi > 60 ? 1 : 0,
+      last > indicators.ema21 && indicators.ema21 > indicators.ema50 ? 1 : 0,
+      indicators.adx >= 25 ? 1 : 0,
+      indicators.volumeRatio >= 1.2 ? 1 : 0,
+    ].reduce((sum, item) => sum + item, 0)
+    const biasScore = Math.min(5, Math.abs(indicators.bias))
     const directionSign = Math.sign(indicators.bias)
     const momentumSign = directions[index] === 'down' ? -1 : 1
     const confirmed = Math.abs(indicators.bias) >= 3
@@ -66,6 +77,8 @@ export async function GET(request: Request) {
       candleTime: candle.time,
       confirmed,
       available: true,
+      biasScore,
+      consensusScore,
     }
   }))
 
@@ -82,6 +95,8 @@ export async function GET(request: Request) {
     candleTime: 0,
     confirmed: false,
     available: false,
+    biasScore: 0,
+    consensusScore: 0,
   })
   return NextResponse.json(signals, { headers: { 'Cache-Control': 'public, s-maxage=1, stale-while-revalidate=2' } })
 }

@@ -25,6 +25,8 @@ export type FuturesSignal = {
   candleTime: number
   confirmed: boolean
   available: boolean
+  biasScore: number
+  consensusScore: number
 }
 
 function price(value: number) {

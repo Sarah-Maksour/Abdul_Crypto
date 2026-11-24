@@ -8,6 +8,7 @@ import {
   Activity,
   ArrowDownRight,
   ArrowUpRight,
+  Bell,
   Check,
   ChevronDown,
   ChevronUp,
@@ -157,7 +158,35 @@ function CandleChart({ candles, forecast, loading }: { candles: Candle[]; foreca
   )
 }
 
-function MarketSidebar({ tickers, contracts, selected, onSelect, busy }: { tickers?: Ticker[]; contracts?: FuturesSymbol[]; selected: SymbolKey; onSelect: (symbol: SymbolKey) => void; busy: boolean }) {
+type CompletedOpportunity = {
+  symbol: string
+  baseCoin: string
+  direction: 'up' | 'down'
+  biasScore: number
+  consensusScore: number
+}
+
+function playAlertSound() {
+  try {
+    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    const ctx = new AudioContextClass()
+    const oscillator = ctx.createOscillator()
+    const gain = ctx.createGain()
+    oscillator.connect(gain)
+    gain.connect(ctx.destination)
+    oscillator.type = 'sine'
+    oscillator.frequency.setValueAtTime(880, ctx.currentTime)
+    oscillator.frequency.setValueAtTime(660, ctx.currentTime + 0.15)
+    gain.gain.setValueAtTime(0.3, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4)
+    oscillator.start(ctx.currentTime)
+    oscillator.stop(ctx.currentTime + 0.4)
+  } catch {
+    // AudioContext may be unavailable; silently ignore.
+  }
+}
+
+function MarketSidebar({ tickers, contracts, selected, onSelect, busy, completedOpportunities }: { tickers?: Ticker[]; contracts?: FuturesSymbol[]; selected: SymbolKey; onSelect: (symbol: SymbolKey) => void; busy: boolean; completedOpportunities: Map<string, CompletedOpportunity> }) {
   const [query, setQuery] = useState('')
   const [collapsed, setCollapsed] = useState(false)
   const [copiedSymbol, setCopiedSymbol] = useState<string | null>(null)
@@ -212,8 +241,9 @@ function MarketSidebar({ tickers, contracts, selected, onSelect, busy }: { ticke
                 const active = contract.symbol === selected
                 const positive = (ticker?.change24h ?? 0) >= 0
                 const copied = copiedSymbol === contract.symbol
+                const opp = completedOpportunities.get(contract.symbol)
                 return (
-                  <button key={contract.symbol} type="button" className={`watch-row ${active ? 'watch-row-active' : ''}`} onClick={() => onSelect(contract.symbol)} aria-pressed={active}>
+                  <button key={contract.symbol} type="button" className={`watch-row ${active ? 'watch-row-active' : ''} ${opp ? 'watch-row-complete' : ''}`} onClick={() => onSelect(contract.symbol)} aria-pressed={active}>
                     <span className={`coin-mark coin-${contract.baseCoin.toLowerCase()}`}>{contract.baseCoin.slice(0, 1)}</span>
                     <span className="watch-name">
                       <span className="watch-name-row">
@@ -224,7 +254,14 @@ function MarketSidebar({ tickers, contracts, selected, onSelect, busy }: { ticke
                       </span>
                       <small>{contract.name}</small>
                     </span>
-                    <span className="watch-quote"><b>{ticker ? `${formatPrice(ticker.price)}` : '—'}</b><small className={positive ? 'tone-positive' : 'tone-negative'}>{ticker ? formatChange(ticker.change24h) : '—'}</small></span>
+                    {opp ? (
+                      <span className={`complete-badge ${opp.direction === 'up' ? 'complete-up' : 'complete-down'}`} title={`فرصة مكتملة 5/5 · ${opp.direction === 'up' ? 'صاعد' : 'هابط'}`}>
+                        <Bell />
+                        <b>5/5</b>
+                      </span>
+                    ) : (
+                      <span className="watch-quote"><b>{ticker ? `${formatPrice(ticker.price)}` : '—'}</b><small className={positive ? 'tone-positive' : 'tone-negative'}>{ticker ? formatChange(ticker.change24h) : '—'}</small></span>
+                    )}
                   </button>
                 )
               })}
@@ -362,6 +399,9 @@ export default function TradeDashboard() {
   const [scanDirections, setScanDirections] = useState<Array<'up' | 'down'>>([])
   const [momentumCandidates, setMomentumCandidates] = useState<MomentumCandidate[]>([])
   const [scannerRefreshing, setScannerRefreshing] = useState(false)
+  const [completedOpps, setCompletedOpps] = useState<Map<string, CompletedOpportunity>>(new Map())
+  const [alertBanner, setAlertBanner] = useState<CompletedOpportunity | null>(null)
+  const notifiedOpps = useRef(new Set<string>())
   const priceHistory = useRef(new Map<string, { time: number; price: number }[]>())
   const lastScanBatchAt = useRef(0)
   const marketKey = `/api/market?symbol=${encodeURIComponent(symbol)}&interval=${timeframe}`
@@ -449,6 +489,70 @@ export default function TradeDashboard() {
     }
   }, [tickers])
 
+  useEffect(() => {
+    if (!scannerSignals?.length) {
+      if (completedOpps.size > 0) setCompletedOpps(new Map())
+      return
+    }
+    const nextOpps = new Map<string, CompletedOpportunity>()
+    const contractsMap = new Map((contracts ?? []).map((contract) => [contract.symbol, contract]))
+    for (const signal of scannerSignals) {
+      if (!signal.available) continue
+      const bias5 = signal.biasScore >= 5
+      const consensus5 = signal.consensusScore >= 5
+      if (bias5 && consensus5) {
+        const contract = contractsMap.get(signal.symbol)
+        nextOpps.set(signal.symbol, {
+          symbol: signal.symbol,
+          baseCoin: contract?.baseCoin ?? signal.symbol.slice(0, -4),
+          direction: signal.direction === 'down' ? 'down' : 'up',
+          biasScore: signal.biasScore,
+          consensusScore: signal.consensusScore,
+        })
+      }
+    }
+    const newlyCompleted: CompletedOpportunity[] = []
+    for (const [symbolKey, opp] of nextOpps) {
+      if (!notifiedOpps.current.has(symbolKey)) {
+        notifiedOpps.current.add(symbolKey)
+        newlyCompleted.push(opp)
+      }
+    }
+    const droppedSymbols: string[] = []
+    for (const symbolKey of notifiedOpps.current) {
+      if (!nextOpps.has(symbolKey)) droppedSymbols.push(symbolKey)
+    }
+    for (const symbolKey of droppedSymbols) notifiedOpps.current.delete(symbolKey)
+    setCompletedOpps(nextOpps)
+    if (newlyCompleted.length > 0) {
+      const latest = newlyCompleted[newlyCompleted.length - 1]
+      setAlertBanner(latest)
+      playAlertSound()
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        if (Notification.permission === 'granted') {
+          new Notification('فرصة مكتملة 5/5', {
+            body: `${latest.baseCoin} · ${latest.direction === 'up' ? 'صاعد' : 'هابط'} · ميل 5/5 وتوافق 5/5`,
+          })
+        } else if (Notification.permission !== 'denied') {
+          Notification.requestPermission().then((permission) => {
+            if (permission === 'granted') {
+              new Notification('فرصة مكتملة 5/5', {
+                body: `${latest.baseCoin} · ${latest.direction === 'up' ? 'صاعد' : 'هابط'} · ميل 5/5 وتوافق 5/5`,
+              })
+            }
+          })
+        }
+      }
+      setTimeout(() => setAlertBanner((current) => current === latest ? null : current), 8000)
+    }
+  }, [scannerSignals, contracts])
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+  }, [])
+
   async function refreshScanner() {
     setScannerRefreshing(true)
     lastScanBatchAt.current = 0
@@ -506,8 +610,16 @@ export default function TradeDashboard() {
 
         {dashboardError && <div className="error-banner" role="alert"><Zap /> تعذّر تحديث بيانات العقود: {dashboardError.message}<button type="button" onClick={refreshEverything}>إعادة المحاولة</button></div>}
 
+        {alertBanner && (
+          <div className={`alert-banner ${alertBanner.direction === 'up' ? 'alert-up' : 'alert-down'}`} role="alert">
+            <Bell />
+            <span><b>فرصة مكتملة 5/5</b> — {alertBanner.baseCoin} · {alertBanner.direction === 'up' ? 'صاعد' : 'هابط'} · ميل 5/5 وتوافق 5/5</span>
+            <button type="button" onClick={() => selectSymbol(alertBanner.symbol)}>عرض</button>
+          </div>
+        )}
+
         <section className="layout-grid" aria-label="لوحة تحليل السوق">
-          <MarketSidebar tickers={tickers} contracts={contracts} selected={symbol} onSelect={selectSymbol} busy={contractsLoading || tickersLoading} />
+          <MarketSidebar tickers={tickers} contracts={contracts} selected={symbol} onSelect={selectSymbol} busy={contractsLoading || tickersLoading} completedOpportunities={completedOpps} />
 
           <section className="panel chart-panel" id="markets">
             <div className="instrument-heading">

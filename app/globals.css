@@ -473,6 +473,26 @@ button { font: inherit; }
 .indicator-consensus small { color: #94a8a2; font-size: 8px; font-weight: 600; }
 .indicator-consensus b { color: #56d7a7; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; font-weight: 800; }
 
+.alert-banner { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; padding: 12px 16px; border-radius: 12px; animation: alert-pulse .5s ease-out; }
+.alert-banner svg { width: 20px; height: 20px; flex: 0 0 auto; }
+.alert-banner span { flex: 1; color: #eef5f0; font-size: 11px; line-height: 1.7; }
+.alert-banner b { font-size: 12px; }
+.alert-banner button { min-height: 30px; padding: 0 14px; border: 0; border-radius: 8px; color: #0c1418; background: #eef5f0; font-size: 10px; font-weight: 700; cursor: pointer; }
+.alert-up { border: 1px solid rgba(85, 214, 167, .4); background: linear-gradient(135deg, rgba(38, 97, 71, .28), rgba(15, 24, 26, .9)); }
+.alert-up svg { color: #56d7a7; }
+.alert-down { border: 1px solid rgba(255, 113, 131, .4); background: linear-gradient(135deg, rgba(116, 47, 60, .28), rgba(15, 24, 26, .9)); }
+.alert-down svg { color: #fb7185; }
+@keyframes alert-pulse { 0% { transform: scale(.96); opacity: 0; } 50% { transform: scale(1.01); } 100% { transform: scale(1); opacity: 1; } }
+
+.watch-row-complete { border-color: rgba(85, 214, 167, .5) !important; background: linear-gradient(135deg, rgba(38, 97, 71, .18), rgba(15, 24, 26, .6)) !important; box-shadow: 0 0 0 1px rgba(85, 214, 167, .22); }
+.complete-badge { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 7px; font-size: 9px; font-weight: 800; }
+.complete-badge svg { width: 11px; height: 11px; }
+.complete-badge b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
+.complete-up { color: #56d7a7; background: rgba(85, 214, 167, .15); }
+.complete-up svg { color: #56d7a7; }
+.complete-down { color: #fb7185; background: rgba(255, 113, 131, .15); }
+.complete-down svg { color: #fb7185; }
+
 @media (max-width: 1180px) {
   .live-scanner-panel { padding: 15px; }
   .scanner-grid { grid-template-columns: minmax(0, 1fr); }
