@@ -165,29 +165,49 @@ type CompletedOpportunity = {
   direction: 'up' | 'down'
   biasScore: number
   consensusScore: number
+  entry: number | null
+  target: number | null
+  stop: number | null
+  price: number
+  firstDetectedAt: number
 }
 
 const TELEGRAM_BOT_TOKEN_FALLBACK = '9055457414:AAEw-cvr2yomOvBFhsIuMSqQgqN8TmDUFUY'
 const TELEGRAM_CHAT_ID_FALLBACK = '6281055314'
 
-async function sendTelegramAlert(opp: CompletedOpportunity, price: number): Promise<void> {
+function formatTimeAgo(detectedAt: number): string {
+  const seconds = Math.floor((Date.now() - detectedAt) / 1000)
+  if (seconds < 5) return 'Just now'
+  if (seconds < 60) return `${seconds}s ago`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
+async function sendTelegramAlert(opp: CompletedOpportunity): Promise<void> {
   const directionLabel = opp.direction === 'up' ? 'Bullish 🟢' : 'Bearish 🔴'
-  const timestamp = new Date().toISOString()
-  const text = [
+  const detectionTime = new Date(opp.firstDetectedAt).toISOString()
+  const timeAgo = formatTimeAgo(opp.firstDetectedAt)
+  const lines = [
     '🔔 <b>Dual 5/5 Completed Opportunity</b>',
     '',
     `Coin: <b>${opp.symbol}</b>`,
     `Direction: ${directionLabel}`,
-    `Price: ${formatPrice(price)}`,
-    `Bias/Trend: ${opp.biasScore}/5`,
-    `Confluence: ${opp.consensusScore}/5`,
-    `Time: ${timestamp}`,
-  ].join('\n')
+    `Current Price: ${formatPrice(opp.price)}`,
+  ]
+  if (opp.entry !== null) lines.push(`Entry Price: ${formatPrice(opp.entry)}`)
+  if (opp.target !== null) lines.push(`Take Profit: ${formatPrice(opp.target)}`)
+  if (opp.stop !== null) lines.push(`Stop Loss: ${formatPrice(opp.stop)}`)
+  lines.push(`Bias/Trend: ${opp.biasScore}/5`, `Confluence: ${opp.consensusScore}/5`)
+  lines.push(`Detection Time: ${detectionTime}`, `Detected: ${timeAgo}`)
   try {
     await fetch('/api/telegram', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text: lines.join('\n') }),
     })
   } catch {
     // Network failure; the in-app alert still fires.
@@ -430,6 +450,7 @@ export default function TradeDashboard() {
   const [completedOpps, setCompletedOpps] = useState<Map<string, CompletedOpportunity>>(new Map())
   const [alertBanner, setAlertBanner] = useState<CompletedOpportunity | null>(null)
   const notifiedOpps = useRef(new Set<string>())
+  const firstDetectionTimes = useRef(new Map<string, number>())
   const priceHistory = useRef(new Map<string, { time: number; price: number }[]>())
   const lastScanBatchAt = useRef(0)
   const marketKey = `/api/market?symbol=${encodeURIComponent(symbol)}&interval=${timeframe}`
@@ -524,18 +545,28 @@ export default function TradeDashboard() {
     }
     const nextOpps = new Map<string, CompletedOpportunity>()
     const contractsMap = new Map((contracts ?? []).map((contract) => [contract.symbol, contract]))
+    const tickerBySymbol = new Map((tickers ?? []).map((ticker) => [ticker.symbol, ticker]))
     for (const signal of scannerSignals) {
       if (!signal.available) continue
       const bias5 = signal.biasScore >= 5
       const consensus5 = signal.consensusScore >= 5
       if (bias5 && consensus5) {
         const contract = contractsMap.get(signal.symbol)
+        const ticker = tickerBySymbol.get(signal.symbol)
+        if (!firstDetectionTimes.current.has(signal.symbol)) {
+          firstDetectionTimes.current.set(signal.symbol, Date.now())
+        }
         nextOpps.set(signal.symbol, {
           symbol: signal.symbol,
           baseCoin: contract?.baseCoin ?? signal.symbol.slice(0, -4),
           direction: signal.direction === 'down' ? 'down' : 'up',
           biasScore: signal.biasScore,
           consensusScore: signal.consensusScore,
+          entry: signal.entry,
+          target: signal.target,
+          stop: signal.stop,
+          price: ticker?.price ?? 0,
+          firstDetectedAt: firstDetectionTimes.current.get(signal.symbol) ?? Date.now(),
         })
       }
     }
@@ -550,15 +581,16 @@ export default function TradeDashboard() {
     for (const symbolKey of notifiedOpps.current) {
       if (!nextOpps.has(symbolKey)) droppedSymbols.push(symbolKey)
     }
-    for (const symbolKey of droppedSymbols) notifiedOpps.current.delete(symbolKey)
+    for (const symbolKey of droppedSymbols) {
+      notifiedOpps.current.delete(symbolKey)
+      firstDetectionTimes.current.delete(symbolKey)
+    }
     setCompletedOpps(nextOpps)
     if (newlyCompleted.length > 0) {
       const latest = newlyCompleted[newlyCompleted.length - 1]
-      const tickerForOpp = tickers?.find((item) => item.symbol === latest.symbol)
-      const oppPrice = tickerForOpp?.price ?? 0
       setAlertBanner(latest)
       playAlertSound()
-      void sendTelegramAlert(latest, oppPrice)
+      void sendTelegramAlert(latest)
       if (typeof window !== 'undefined' && 'Notification' in window) {
         if (Notification.permission === 'granted') {
           new Notification('فرصة مكتملة 5/5', {
@@ -618,8 +650,13 @@ export default function TradeDashboard() {
       direction: 'up',
       biasScore: 5,
       consensusScore: 5,
+      entry: 50000,
+      target: 51500,
+      stop: 49200,
+      price: 50100,
+      firstDetectedAt: Date.now(),
     }
-    void sendTelegramAlert(testOpp, 0)
+    void sendTelegramAlert(testOpp)
     try {
       const response = await fetch('/api/telegram', {
         method: 'POST',

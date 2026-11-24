@@ -240,13 +240,16 @@ export async function getFuturesSymbols(): Promise<FuturesSymbol[]> {
     'https://api.bitget.com/api/v2/mix/market/contracts?productType=USDT-FUTURES', 3600,
   )
   return contracts
-    .filter((contract) => contract.quoteCoin === 'USDT' && contract.symbolStatus === 'normal' && symbolPattern.test(contract.symbol))
-    .map((contract) => ({
-      symbol: contract.symbol,
-      baseCoin: contract.baseCoin,
-      name: favoriteNames.get(contract.symbol) ?? contract.baseCoin,
-      quoteCoin: 'USDT' as const,
-    }))
+    .flatMap((contract) => {
+      if (!contract || typeof contract.symbol !== 'string' || typeof contract.baseCoin !== 'string') return []
+      if (contract.quoteCoin !== 'USDT' || contract.symbolStatus !== 'normal' || !symbolPattern.test(contract.symbol)) return []
+      return [{
+        symbol: contract.symbol,
+        baseCoin: contract.baseCoin,
+        name: favoriteNames.get(contract.symbol) ?? contract.baseCoin,
+        quoteCoin: 'USDT' as const,
+      }]
+    })
     .sort((a, b) => a.symbol.localeCompare(b.symbol))
 }
 
@@ -288,14 +291,14 @@ export async function getMarketSnapshot(symbol: string, timeframe: string): Prom
   const raw = await getBitgetData<string[][]>(`https://api.bitget.com/api/v2/mix/market/candles?${query}`, 1)
   if (raw.length < 55) throw new Error('البيانات التاريخية غير كافية لهذا العقد.')
 
-  const candles = raw.map((row) => ({
-    time: Number(row[0]),
-    open: Number(row[1]),
-    high: Number(row[2]),
-    low: Number(row[3]),
-    close: Number(row[4]),
-    volume: Number(row[5]),
-  })).filter((candle) => Object.values(candle).every(Number.isFinite)).sort((a, b) => a.time - b.time) as Candle[]
+  const candles = raw
+    .map((row) => {
+      if (!Array.isArray(row) || row.length < 6) return null
+      const parsed = { time: Number(row[0]), open: Number(row[1]), high: Number(row[2]), low: Number(row[3]), close: Number(row[4]), volume: Number(row[5]) }
+      return Object.values(parsed).every(Number.isFinite) ? parsed : null
+    })
+    .filter((candle): candle is NonNullable<typeof candle> => candle !== null)
+    .sort((a, b) => a.time - b.time) as Candle[]
   const market = MARKETS.find((item) => item.symbol === normalizedSymbol)
   const price = candles.at(-1)!.close
   const previous = candles.at(-2) ?? candles.at(-1)!
