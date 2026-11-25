@@ -175,34 +175,57 @@ type CompletedOpportunity = {
 const TELEGRAM_BOT_TOKEN_FALLBACK = '9055457414:AAEw-cvr2yomOvBFhsIuMSqQgqN8TmDUFUY'
 const TELEGRAM_CHAT_ID_FALLBACK = '6281055314'
 
-function formatTimeAgo(detectedAt: number): string {
+function formatTimeAgoAr(detectedAt: number): string {
   const seconds = Math.floor((Date.now() - detectedAt) / 1000)
-  if (seconds < 10) return 'Just detected / Now'
-  if (seconds < 60) return `${seconds}s ago`
+  if (seconds < 10) return 'تم الرصد الآن'
+  if (seconds < 60) {
+    const word = seconds <= 2 ? 'ثانيتان' : seconds <= 10 ? `${seconds} ثوانٍ` : `${seconds} ثانية`
+    return `منذ ${word}`
+  }
   const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m ago`
+  if (minutes < 60) {
+    const word = minutes === 1 ? 'دقيقة' : minutes === 2 ? 'دقيقتان' : minutes <= 10 ? `${minutes} دقائق` : `${minutes} دقيقة`
+    return `منذ ${word}`
+  }
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
+  if (hours < 24) {
+    const word = hours === 1 ? 'ساعة' : hours === 2 ? 'ساعتان' : hours <= 10 ? `${hours} ساعات` : `${hours} ساعة`
+    return `منذ ${word}`
+  }
   const days = Math.floor(hours / 24)
-  return `${days}d ago`
+  const word = days === 1 ? 'يوم' : days === 2 ? 'يومان' : days <= 10 ? `${days} أيام` : `${days} يوماً`
+  return `منذ ${word}`
+}
+
+function formatAbuDhabiTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleString('ar-EG', {
+    timeZone: 'Asia/Dubai',
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+  })
 }
 
 async function sendTelegramAlert(opp: CompletedOpportunity): Promise<void> {
-  const directionLabel = opp.direction === 'up' ? 'Bullish 🟢' : 'Bearish 🔴'
-  const detectionTime = new Date(opp.firstDetectedAt).toISOString()
-  const timeAgo = formatTimeAgo(opp.firstDetectedAt)
+  const directionLabel = opp.direction === 'up' ? 'صاعد 🟢' : 'هابط 🔴'
+  const coinLabel = opp.baseCoin || opp.symbol.replace(/USDT$/, '')
   const lines = [
-    '🔔 <b>Signal Alert — Bias 4+ / Confluence 5/5</b>',
+    '🔔 <b>فرصة مؤكدة — ميل 4+/5 وتوافق 5/5</b>',
     '',
-    `Coin: <b>${opp.symbol}</b>`,
-    `Direction: ${directionLabel}`,
-    `Current Price: ${formatPrice(opp.price)}`,
+    `العملة: <b>${coinLabel}</b> (${opp.symbol})`,
+    `الاتجاه: ${directionLabel}`,
+    `السعر الحالي: ${formatUsd(opp.price)}`,
   ]
-  if (opp.entry !== null) lines.push(`Entry Price: ${formatPrice(opp.entry)}`)
-  if (opp.target !== null) lines.push(`Take Profit: ${formatPrice(opp.target)}`)
-  if (opp.stop !== null) lines.push(`Stop Loss: ${formatPrice(opp.stop)}`)
-  lines.push(`Bias/Trend: ${opp.biasScore}/5`, `Confluence: ${opp.consensusScore}/5`)
-  lines.push(`Detection Time: ${detectionTime}`, `Signal Age: ${timeAgo}`)
+  if (opp.entry !== null) lines.push(`دخول مرجعي: ${formatUsd(opp.entry)}`)
+  if (opp.target !== null) lines.push(`الهدف المبدئي: ${formatUsd(opp.target)}`)
+  if (opp.stop !== null) lines.push(`الوقف التقديري: ${formatUsd(opp.stop)}`)
+  lines.push(
+    `الميل الفني: ${opp.biasScore}/5`,
+    `التوافق الفني: ${opp.consensusScore}/5`,
+    `وقت الرصد: ${formatTimeAgoAr(opp.firstDetectedAt)}`,
+    `التوقيت المحلي (أبوظبي): ${formatAbuDhabiTime(opp.firstDetectedAt)}`,
+  )
   try {
     await fetch('/api/telegram', {
       method: 'POST',
@@ -642,13 +665,13 @@ export default function TradeDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: [
-            '🧪 <b>Telegram Test Alert</b>',
+            '🧪 <b>تنبيه اختبار تيليجرام</b>',
             '',
-            'Bot: @Abdul_Trade_bot',
-            `Status: ${telegramTesting ? 'Testing…' : 'Sent'}`,
-            `Time: ${new Date().toISOString()}`,
+            'البوت: @Abdul_Trade_bot',
+            `الحالة: ${telegramTesting ? 'جارٍ الاختبار…' : 'تم الإرسال'}`,
+            `الوقت المحلي (أبوظبي): ${formatAbuDhabiTime(Date.now())}`,
             '',
-            'If you received this, Telegram alerts are working.',
+            'إذا وصلتك هذه الرسالة، فإن تنبيهات تيليجرام تعمل بشكل صحيح.',
           ].join('\n'),
         }),
       })
