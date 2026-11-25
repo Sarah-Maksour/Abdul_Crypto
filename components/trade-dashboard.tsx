@@ -177,7 +177,7 @@ const TELEGRAM_CHAT_ID_FALLBACK = '6281055314'
 
 function formatTimeAgo(detectedAt: number): string {
   const seconds = Math.floor((Date.now() - detectedAt) / 1000)
-  if (seconds < 5) return 'Just now'
+  if (seconds < 10) return 'Just detected / Now'
   if (seconds < 60) return `${seconds}s ago`
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `${minutes}m ago`
@@ -192,7 +192,7 @@ async function sendTelegramAlert(opp: CompletedOpportunity): Promise<void> {
   const detectionTime = new Date(opp.firstDetectedAt).toISOString()
   const timeAgo = formatTimeAgo(opp.firstDetectedAt)
   const lines = [
-    '🔔 <b>Dual 5/5 Completed Opportunity</b>',
+    '🔔 <b>Signal Alert — Bias 4+ / Confluence 5/5</b>',
     '',
     `Coin: <b>${opp.symbol}</b>`,
     `Direction: ${directionLabel}`,
@@ -202,7 +202,7 @@ async function sendTelegramAlert(opp: CompletedOpportunity): Promise<void> {
   if (opp.target !== null) lines.push(`Take Profit: ${formatPrice(opp.target)}`)
   if (opp.stop !== null) lines.push(`Stop Loss: ${formatPrice(opp.stop)}`)
   lines.push(`Bias/Trend: ${opp.biasScore}/5`, `Confluence: ${opp.consensusScore}/5`)
-  lines.push(`Detection Time: ${detectionTime}`, `Detected: ${timeAgo}`)
+  lines.push(`Detection Time: ${detectionTime}`, `Signal Age: ${timeAgo}`)
   try {
     await fetch('/api/telegram', {
       method: 'POST',
@@ -303,7 +303,7 @@ function MarketSidebar({ tickers, contracts, selected, onSelect, busy, completed
                       <small>{contract.name}</small>
                     </span>
                     {opp ? (
-                      <span className={`complete-badge ${opp.direction === 'up' ? 'complete-up' : 'complete-down'}`} title={`فرصة مكتملة 5/5 · ${opp.direction === 'up' ? 'صاعد' : 'هابط'}`}>
+                      <span className={`complete-badge ${opp.direction === 'up' ? 'complete-up' : 'complete-down'}`} title={`فرصة مؤكدة · ميل ${opp.biasScore}/5 وتوافق ${opp.consensusScore}/5 · ${opp.direction === 'up' ? 'صاعد' : 'هابط'}`}>
                         <Bell />
                         <b>5/5</b>
                       </span>
@@ -548,9 +548,9 @@ export default function TradeDashboard() {
     const tickerBySymbol = new Map((tickers ?? []).map((ticker) => [ticker.symbol, ticker]))
     for (const signal of scannerSignals) {
       if (!signal.available) continue
-      const bias5 = signal.biasScore >= 5
+      const biasPass = signal.biasScore >= 4
       const consensus5 = signal.consensusScore >= 5
-      if (bias5 && consensus5) {
+      if (biasPass && consensus5) {
         const contract = contractsMap.get(signal.symbol)
         const ticker = tickerBySymbol.get(signal.symbol)
         if (!firstDetectionTimes.current.has(signal.symbol)) {
@@ -591,30 +591,9 @@ export default function TradeDashboard() {
       setAlertBanner(latest)
       playAlertSound()
       void sendTelegramAlert(latest)
-      if (typeof window !== 'undefined' && 'Notification' in window) {
-        if (Notification.permission === 'granted') {
-          new Notification('فرصة مكتملة 5/5', {
-            body: `${latest.baseCoin} · ${latest.direction === 'up' ? 'صاعد' : 'هابط'} · ميل 5/5 وتوافق 5/5`,
-          })
-        } else if (Notification.permission !== 'denied') {
-          Notification.requestPermission().then((permission) => {
-            if (permission === 'granted') {
-              new Notification('فرصة مكتملة 5/5', {
-                body: `${latest.baseCoin} · ${latest.direction === 'up' ? 'صاعد' : 'هابط'} · ميل 5/5 وتوافق 5/5`,
-              })
-            }
-          })
-        }
-      }
       setTimeout(() => setAlertBanner((current) => current === latest ? null : current), 8000)
     }
   }, [scannerSignals, contracts, tickers])
-
-  useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission()
-    }
-  }, [])
 
   async function refreshScanner() {
     setScannerRefreshing(true)
@@ -729,7 +708,7 @@ export default function TradeDashboard() {
         {alertBanner && (
           <div className={`alert-banner ${alertBanner.direction === 'up' ? 'alert-up' : 'alert-down'}`} role="alert">
             <Bell />
-            <span><b>فرصة مكتملة 5/5</b> — {alertBanner.baseCoin} · {alertBanner.direction === 'up' ? 'صاعد' : 'هابط'} · ميل 5/5 وتوافق 5/5</span>
+            <span><b>فرصة مؤكدة</b> — {alertBanner.baseCoin} · {alertBanner.direction === 'up' ? 'صاعد' : 'هابط'} · ميل {alertBanner.biasScore}/5 وتوافق {alertBanner.consensusScore}/5</span>
             <button type="button" onClick={() => selectSymbol(alertBanner.symbol)}>عرض</button>
           </div>
         )}
